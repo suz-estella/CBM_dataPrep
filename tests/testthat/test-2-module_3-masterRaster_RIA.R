@@ -9,46 +9,37 @@ test_that("Module: RIA", {
   projectName <- "RIA-small"
   times       <- list(start = 2020, end = 2021)
 
-  simInitInput <- SpaDEStestMuffleOutput(
+  simInitInput <- SpaDES.project::setupProject(
 
-    SpaDES.project::setupProject(
+    modules = "CBM_dataPrep",
+    times   = times,
+    paths   = list(
+      projectPath = spadesTestPaths$projectPath,
+      modulePath  = spadesTestPaths$modulePath,
+      packagePath = spadesTestPaths$packagePath,
+      inputPath   = spadesTestPaths$inputPath,
+      cachePath   = spadesTestPaths$cachePath,
+      outputPath  = file.path(spadesTestPaths$temp$outputs, projectName)
+    ),
 
-      modules = "CBM_dataPrep",
-      times   = times,
-      paths   = list(
-        projectPath = spadesTestPaths$projectPath,
-        modulePath  = spadesTestPaths$modulePath,
-        packagePath = spadesTestPaths$packagePath,
-        inputPath   = spadesTestPaths$inputPath,
-        cachePath   = spadesTestPaths$cachePath,
-        outputPath  = file.path(spadesTestPaths$temp$outputs, projectName)
-      ),
+    # Set required packages for project set up
+    require = "terra",
 
-      # Set required packages for project set up
-      require = "terra",
-
-      # Set study area
-      masterRaster = terra::rast(
-        crs        = "EPSG:3979",
-        extent     = c(xmin = -1653000, xmax = -1553000, ymin = 1180000, ymax = 1280000),
-        resolution = 250,
-        vals       = 1
-      )
+    # Set study area
+    masterRaster = terra::rast(
+      crs        = "EPSG:3979",
+      extent     = c(xmin = -1653000, xmax = -1553000, ymin = 1180000, ymax = 1280000),
+      resolution = 250,
+      vals       = 1
     )
   )
 
   # Run simInit
-  simTestInit <- SpaDEStestMuffleOutput(
-    SpaDES.core::simInit2(simInitInput)
-  )
-
+  simTestInit <- SpaDES.core::simInit2(simInitInput)
   expect_s4_class(simTestInit, "simList")
 
   # Run spades
-  simTest <- SpaDEStestMuffleOutput(
-    SpaDES.core::spades(simTestInit)
-  )
-
+  simTest <- SpaDES.core::spades(simTestInit)
   expect_s4_class(simTest, "simList")
 
 

@@ -9,69 +9,60 @@ test_that("Module: SK with disturbanceRasters", {
   projectName <- "SK-disturbanceRasters"
   times       <- list(start = 1998, end = 2000)
 
-  simInitInput <- SpaDEStestMuffleOutput(
+  simInitInput <- SpaDES.project::setupProject(
 
-    SpaDES.project::setupProject(
+    modules = "CBM_dataPrep",
+    times   = times,
+    paths   = list(
+      projectPath = spadesTestPaths$projectPath,
+      modulePath  = spadesTestPaths$modulePath,
+      packagePath = spadesTestPaths$packagePath,
+      inputPath   = spadesTestPaths$inputPath,
+      cachePath   = spadesTestPaths$cachePath,
+      outputPath  = file.path(spadesTestPaths$temp$outputs, projectName)
+    ),
 
-      modules = "CBM_dataPrep",
-      times   = times,
-      paths   = list(
-        projectPath = spadesTestPaths$projectPath,
-        modulePath  = spadesTestPaths$modulePath,
-        packagePath = spadesTestPaths$packagePath,
-        inputPath   = spadesTestPaths$inputPath,
-        cachePath   = spadesTestPaths$cachePath,
-        outputPath  = file.path(spadesTestPaths$temp$outputs, projectName)
-      ),
+    # Set required packages for project set up
+    require = "terra",
 
-      # Set required packages for project set up
-      require = "terra",
+    # Set study area
+    masterRaster = terra::rast(
+      crs        = "EPSG:3979",
+      extent     = c(xmin = -687696, xmax = -681036, ymin = 711955, ymax = 716183),
+      resolution = 30,
+      vals       = 1
+    ),
 
-      # Set study area
-      masterRaster = terra::rast(
-        crs        = "EPSG:3979",
-        extent     = c(xmin = -687696, xmax = -681036, ymin = 711955, ymax = 716183),
-        resolution = 30,
-        vals       = 1
-      ),
-
-      # Set disturbances
-      ## Test matching user disturbances with CBM-CFS3 disturbances
-      disturbanceMeta = rbind(
-        data.frame(eventID = 1, wholeStand = 1, name = "Wildfire",
-                   sourceValue = 1, sourceDelay = 1, sourceObjectName = NA_character_),
-        data.frame(eventID = 2, wholeStand = 1, name = "Clearcut harvesting without salvage",
-                   sourceValue = NA_integer_, sourceDelay = NA_integer_, sourceObjectName = "clearcut")
-      ),
-      disturbanceRasters = list(
-        `1` = list(
-          `1998` = terra::rast(
-            crs        = "EPSG:3979",
-            extent     = c(xmin = -687696, xmax = -681036, ymin = 711955, ymax = 716183),
-            resolution = 30,
-            vals       = c(1, 2, rep(NA, 31300))
+    # Set disturbances
+    ## Test matching user disturbances with CBM-CFS3 disturbances
+    disturbanceMeta = rbind(
+      data.frame(eventID = 1, wholeStand = 1, name = "Wildfire",
+                 sourceValue = 1, sourceDelay = 1, sourceObjectName = NA_character_),
+      data.frame(eventID = 2, wholeStand = 1, name = "Clearcut harvesting without salvage",
+                 sourceValue = NA_integer_, sourceDelay = NA_integer_, sourceObjectName = "clearcut")
+    ),
+    disturbanceRasters = list(
+      `1` = list(
+        `1998` = terra::rast(
+          crs        = "EPSG:3979",
+          extent     = c(xmin = -687696, xmax = -681036, ymin = 711955, ymax = 716183),
+          resolution = 30,
+          vals       = c(1, 2, rep(NA, 31300))
         ))),
-      clearcut = terra::rast(
-        crs        = "EPSG:3979",
-        extent     = c(xmin = -687696, xmax = -681036, ymin = 711955, ymax = 716183),
-        resolution = 30,
-        vals       = c(1, rep(NA, 31301))
-      )
+    clearcut = terra::rast(
+      crs        = "EPSG:3979",
+      extent     = c(xmin = -687696, xmax = -681036, ymin = 711955, ymax = 716183),
+      resolution = 30,
+      vals       = c(1, rep(NA, 31301))
     )
   )
 
   # Run simInit
-  simTestInit <- SpaDEStestMuffleOutput(
-    SpaDES.core::simInit2(simInitInput)
-  )
-
+  simTestInit <- SpaDES.core::simInit2(simInitInput)
   expect_s4_class(simTestInit, "simList")
 
   # Run spades
-  simTest <- SpaDEStestMuffleOutput(
-    SpaDES.core::spades(simTestInit)
-  )
-
+  simTest <- SpaDES.core::spades(simTestInit)
   expect_s4_class(simTest, "simList")
 
 

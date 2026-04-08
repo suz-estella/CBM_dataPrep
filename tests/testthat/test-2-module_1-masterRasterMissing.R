@@ -7,34 +7,25 @@ test_that("Module: masterRaster missing", {
   projectName <- "masterRasterMissing"
   times       <- list(start = 2025, end = 2025)
 
-  simInitInput <- SpaDEStestMuffleOutput(
-
-    SpaDES.project::setupProject(
-      modules = "CBM_dataPrep",
-      times   = times,
-      paths   = list(
-        projectPath = spadesTestPaths$projectPath,
-        modulePath  = spadesTestPaths$modulePath,
-        packagePath = spadesTestPaths$packagePath,
-        inputPath   = spadesTestPaths$inputPath,
-        cachePath   = spadesTestPaths$cachePath,
-        outputPath  = file.path(spadesTestPaths$temp$outputs, projectName)
-      )
+  simInitInput <- SpaDES.project::setupProject(
+    modules = "CBM_dataPrep",
+    times   = times,
+    paths   = list(
+      projectPath = spadesTestPaths$projectPath,
+      modulePath  = spadesTestPaths$modulePath,
+      packagePath = spadesTestPaths$packagePath,
+      inputPath   = spadesTestPaths$inputPath,
+      cachePath   = spadesTestPaths$cachePath,
+      outputPath  = file.path(spadesTestPaths$temp$outputs, projectName)
     )
   )
 
   # Run simInit
-  simTestInit <- SpaDEStestMuffleOutput(
-    SpaDES.core::simInit2(simInitInput)
-  )
-
+  simTestInit <- SpaDES.core::simInit2(simInitInput)
   expect_s4_class(simTestInit, "simList")
 
   # Run spades: expect error due to master raster missing
-  expect_error(
-    SpaDEStestMuffleOutput(
-      SpaDES.core::spades(simTestInit)
-    ))
+  expect_error(SpaDES.core::spades(simTestInit))
 })
 
 

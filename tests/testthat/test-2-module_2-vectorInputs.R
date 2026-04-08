@@ -9,54 +9,45 @@ test_that("Module: vector inputs", {
   projectName <- "vectorInputs"
   times       <- list(start = 2025, end = 2025)
 
-  simInitInput <- SpaDEStestMuffleOutput(
+  simInitInput <- SpaDES.project::setupProject(
 
-    SpaDES.project::setupProject(
+    modules = "CBM_dataPrep",
+    times   = times,
+    paths   = list(
+      projectPath = spadesTestPaths$projectPath,
+      modulePath  = spadesTestPaths$modulePath,
+      packagePath = spadesTestPaths$packagePath,
+      inputPath   = spadesTestPaths$inputPath,
+      cachePath   = spadesTestPaths$cachePath,
+      outputPath  = file.path(spadesTestPaths$temp$outputs, projectName)
+    ),
 
-      modules = "CBM_dataPrep",
-      times   = times,
-      paths   = list(
-        projectPath = spadesTestPaths$projectPath,
-        modulePath  = spadesTestPaths$modulePath,
-        packagePath = spadesTestPaths$packagePath,
-        inputPath   = spadesTestPaths$inputPath,
-        cachePath   = spadesTestPaths$cachePath,
-        outputPath  = file.path(spadesTestPaths$temp$outputs, projectName)
-      ),
+    # Set required packages for project set up
+    require = "terra",
 
-      # Set required packages for project set up
-      require = "terra",
+    # Set study area
+    masterRaster = terra::rast(
+      crs        = "EPSG:3979",
+      extent     = c(xmin = 2437830 - 50, xmax = 2437830 + 50, ymin = 126710 - 50, ymax = 126710 + 50),
+      resolution = 1,
+      vals       = 1
+    ),
 
-      # Set study area
-      masterRaster = terra::rast(
-        crs        = "EPSG:3979",
-        extent     = c(xmin = 2437830 - 50, xmax = 2437830 + 50, ymin = 126710 - 50, ymax = 126710 + 50),
-        resolution = 1,
-        vals       = 1
-      ),
-
-      adminLocator   = "Nova Scotia",
-      ecoLocator     = 7,
-      ageLocator     = 10,
-      ageDataYear    = 2025,
-      cohortLocators = list(
-        curveID = "GC-1"
-      )
+    adminLocator   = "Nova Scotia",
+    ecoLocator     = 7,
+    ageLocator     = 10,
+    ageDataYear    = 2025,
+    cohortLocators = list(
+      curveID = "GC-1"
     )
   )
 
   # Run simInit
-  simTestInit <- SpaDEStestMuffleOutput(
-    SpaDES.core::simInit2(simInitInput)
-  )
-
+  simTestInit <- SpaDES.core::simInit2(simInitInput)
   expect_s4_class(simTestInit, "simList")
 
   # Run spades
-  simTest <- SpaDEStestMuffleOutput(
-    SpaDES.core::spades(simTestInit)
-  )
-
+  simTest <- SpaDES.core::spades(simTestInit)
   expect_s4_class(simTest, "simList")
 
 
