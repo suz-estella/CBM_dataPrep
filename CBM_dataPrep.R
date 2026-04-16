@@ -355,7 +355,8 @@ PrepMasterRaster <- function(sim){
     }
   }
 
-  if (terra::is.lonlat(sim$masterRaster)) stop("masterRaster must be in a projected CRS")
+  if (terra::is.lonlat(sim$masterRaster))          stop("masterRaster must be in a projected CRS")
+  if (terra::ncell(sim$masterRaster) > (2^31 - 1)) stop("masterRaster pixel count limited to 2^31 - 1")
 
   # Mask cells outside of admin boundary
   if (is.character(sim$adminLocator) && length(sim$adminLocator) == 1 &&
@@ -377,18 +378,9 @@ PrepMasterRaster <- function(sim){
 ReadCohorts <- function(sim){
 
   # Initiate pixel table
-  if (terra::ncell(sim$masterRaster) < 2^31){
-    allPixDT <- data.table::data.table(
-      pixelIndex = 1:terra::ncell(sim$masterRaster),
-      key = "pixelIndex")
-
-  }else{
-
-    ## This prevents reaching vector length limitations caused by 1:ncell(sim$masterRaster)
-    allPixDT <- data.table::data.table(
-      matrix(nrow = terra::ncell(sim$masterRaster), ncol = 1))[, .(pixelIndex = .I)]
-    data.table::setkey(allPixDT, pixelIndex)
-  }
+  allPixDT <- data.table::data.table(
+    pixelIndex = 1:terra::ncell(sim$masterRaster),
+    key = "pixelIndex")
 
   # Set cell area
   data.table::set(
