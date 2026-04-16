@@ -340,7 +340,7 @@ PrepMasterRaster <- function(sim){
   if (!inherits(sim$masterRaster, "SpatRaster")){
 
     if (isURL(sim$masterRaster)){
-      sim$masterRaster <- reproducible::prepInputs(
+      sim$masterRaster <- prepInputs(
         destinationPath = inputPath(sim),
         url = sim$masterRaster,
         fun = terra::rast
@@ -354,6 +354,8 @@ PrepMasterRaster <- function(sim){
           call. = FALSE))
     }
   }
+
+  if (terra::is.lonlat(sim$masterRaster)) stop("masterRaster must be in a projected CRS")
 
   # Mask cells outside of admin boundary
   if (is.character(sim$adminLocator) && length(sim$adminLocator) == 1 &&
@@ -375,32 +377,31 @@ PrepMasterRaster <- function(sim){
 ReadCohorts <- function(sim){
 
   # Initiate pixel table
-  allPixDT <- data.table::data.table(
-    pixelIndex = 1:terra::ncell(sim$masterRaster),
-    key = "pixelIndex")
-
-  # Set cell area
-  if (!terra::is.lonlat(sim$masterRaster)){
-    data.table::set(
-      allPixDT, j = "area",
-      value = prod(terra::res(sim$masterRaster) * terra::linearUnits(sim$masterRaster))
-    )
+  if (terra::ncell(sim$masterRaster) < 2^31){
+    allPixDT <- data.table::data.table(
+      pixelIndex = 1:terra::ncell(sim$masterRaster),
+      key = "pixelIndex")
 
   }else{
-    masterRasterCellSize <- terra::cellSize(
-      sim$masterRaster, unit = "m", mask = FALSE, transform = FALSE) |> Cache()
-    data.table::set(
-      allPixDT, j = "area",
-      value = terra::values(masterRasterCellSize, mat = FALSE) |> Cache()
-    )
+
+    ## This prevents reaching vector length limitations caused by 1:ncell(sim$masterRaster)
+    allPixDT <- data.table::data.table(
+      matrix(nrow = terra::ncell(sim$masterRaster), ncol = 1))[, .(pixelIndex = .I)]
+    data.table::setkey(allPixDT, pixelIndex)
   }
+
+  # Set cell area
+  data.table::set(
+    allPixDT, j = "area",
+    value = prod(terra::res(sim$masterRaster) * terra::linearUnits(sim$masterRaster)))
 
   # Set cohort attributes from input sources
   colInputs <- list(
-    admin_name = sim$adminLocator,
-    eco_id     = sim$ecoLocator,
-    age        = sim$ageLocator,
-    curveID    = sim$gcIndexLocator
+    admin_name   = sim$adminLocator,
+    admin_abbrev = if (isValue(sim$adminLocator)) adminAbbrev(sim$adminLocator),
+    eco_id       = sim$ecoLocator,
+    age          = sim$ageLocator,
+    curveID      = sim$gcIndexLocator
   )
 
   if (length(sim$cohortLocators) > 0){
@@ -440,7 +441,7 @@ ReadCohorts <- function(sim){
 
         sourceCBM <- CBMutils::CBMsourceExtractToRast(
           colInputs[[colName]], templateRast = sim$masterRaster
-        ) |> Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
+        ) |> reproducible::Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
 
         data.table::set(allPixDT, j = colName, value = sourceCBM$extractToRast)
 
@@ -453,14 +454,14 @@ ReadCohorts <- function(sim){
         message("Extracting spatial input data into column '", colName, "'")
 
         if (isURL(colInputs[[colName]])){
-          colInputs[[colName]] <- reproducible::prepInputs(
+          colInputs[[colName]] <- prepInputs(
             destinationPath = inputPath(sim),
             url             = colInputs[[colName]])
         }
 
         data.table::set(allPixDT, j = colName, value = CBMutils::extractToRast(
           colInputs[[colName]], templateRast = sim$masterRaster) |>
-            Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
+            reproducible::Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
         )
       }
 
@@ -474,42 +475,19 @@ ReadCohorts <- function(sim){
     }
   }
 
+  # Set admin_abbrev
+  if (!"admin_abbrev" %in% names(allPixDT) & "admin_name" %in% names(allPixDT)){
+    allPixDT[, admin_abbrev := adminAbbrev(admin_name)]
+  }
+
   # Set cohort age data year if not set
   if ("age" %in% names(allPixDT) & is.null(sim$ageDataYear)){
     warning("'ageDataYear' not provided by user; `ageLocator` ages assumed to represent cohort age at simulation start")
     sim$ageDataYear <- as.numeric(start(sim))
   }
 
-  # Set admin_abbrev
-  if ("admin_name" %in% names(allPixDT)){
-
-    adminAbbrevs <- c(
-      "Newfoundland"              = "NL",
-      "Labrador"                  = "NL",
-      "Newfoundland and Labrador" = "NL",
-      "Prince Edward Island"      = "PE",
-      "Nova Scotia"               = "NS",
-      "New Brunswick"             = "NB",
-      "Quebec"                    = "QC",
-      "Ontario"                   = "ON",
-      "Manitoba"                  = "MB",
-      "Alberta"                   = "AB",
-      "Saskatchewan"              = "SK",
-      "British Columbia"          = "BC",
-      "Yukon Territory"           = "YT",
-      "Yukon"                     = "YT",
-      "Northwest Territories"     = "NT",
-      "Nunavut"                   = "NU"
-    )
-
-    allPixDT[, admin_abbrev := factor(
-      adminAbbrevs[as.character(admin_name)], levels = unique(adminAbbrevs))]
-  }
-
   # Return
-  data.table::setkey(allPixDT, pixelIndex)
   sim$standDT <- allPixDT
-
   return(invisible(sim))
 }
 
@@ -613,7 +591,7 @@ AgeStepBackward <- function(sim){
       yearOut    = start(sim),
       distEvents = sim$disturbanceEvents,
       params     = if (is.list(P(sim)$ageBacktrack)) P(sim)$ageBacktrack
-    ) |> Cache()
+    ) |> reproducible::Cache()
   }))
   data.table::setkey(newAges, pixelIndex)
 
@@ -735,7 +713,7 @@ MatchDisturbances <- function(sim){
       sim$disturbanceMeta$name,
       cbm_defaults_db = sim$cbm_defaults_db,
       ask = askUser
-    ) |> Cache()
+    ) |> reproducible::Cache()
 
     sim$disturbanceMeta <- cbind(
       sim$disturbanceMeta, distMatch[, .(disturbance_type_name = name, disturbance_type_id, description)]
@@ -787,25 +765,24 @@ ReadDisturbances <- function(sim, year = time(sim)){
 
     distValues <- CBMutils::extractToRast(
       distRasts[[i]], templateRast = sim$masterRaster
-    ) |> Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
+    ) |> reproducible::Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
 
     if (P(sim)$saveRasters){
-      outPath <- file.path(outputPath(sim), "CBM_dataPrep", sprintf(
-        "distEvents-%s_%s-%s.tif", eventIDs[[i]], year, i))
+      outPath <- file.path(outputPath(sim), "CBM_dataPrep", sprintf("distEvents-%s_%s-%s.tif", eventIDs[[i]], year, i))
       message("Writing aligned raster to path: ", outPath)
       tryCatch(
-        CBMutils::writeRasterWithValues(sim$masterRaster, distValues, outPath, overwrite = TRUE),
+        CBMutils::writeRasterWithValues(sim$masterRaster, outPath, values = distValues, overwrite = TRUE),
         error = function(e) warning(e$message, call. = FALSE))
     }
 
     if (length(na.omit(distMeta$sourceValue)) == 1){
-      eventIndex <- which(distValues %in% distMeta$sourceValue)
+      distValues <- which(distValues %in% distMeta$sourceValue)
     }else{
-      eventIndex <- which(!is.na(distValues))
+      distValues <- which(!is.na(distValues))
     }
 
     data.table::data.table(
-      pixelIndex = eventIndex,
+      pixelIndex = distValues,
       year       = as.integer(year + c(na.omit(distMeta$sourceDelay), 0)[[1]]),
       eventID    = eventIDs[[i]]
     )
@@ -846,37 +823,41 @@ ReadDisturbancesNTEMS <- function(sim){
   newEvents <- lapply(1:nrow(newDist), function(i){
 
     url <- newDist[i,]$url
-    sourceTIF <- reproducible::prepInputs(
+    sourceTIF <- prepInputs(
       url,
       destinationPath = inputPath(sim),
       filename1   = basename(url),
       targetFile  = paste0(tools::file_path_sans_ext(basename(url)), ".tif"),
       alsoExtract = "similar",
       fun         = NA
-    ) |> Cache()
+    ) |> reproducible::Cache()
 
     with(newDist[i,], message(
       "Reading NTEMS disturbances for eventID = ", eventID,
       "; CBM type ID = ", disturbance_type_id,
       "; name = ", shQuote(name)))
 
-    distValues <- CBMutils::extractToRast(
-      sourceTIF, templateRast = sim$masterRaster
-    ) |> Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
+    distValues <- data.table::data.table(year = CBMutils::extractToRast(
+        sourceTIF, templateRast = sim$masterRaster
+      ) |> reproducible::Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
+    )
 
     if (P(sim)$saveRasters){
       outPath <- file.path(outputPath(sim), "CBM_dataPrep", paste0(newDist[i,]$name, '.tif'))
       message("Writing aligned raster to path: ", outPath)
       tryCatch(
-        CBMutils::writeRasterWithValues(sim$masterRaster, distValues, outPath, overwrite = TRUE),
+        CBMutils::writeRasterWithValues(sim$masterRaster, outPath, values = distValues$year, overwrite = TRUE),
         error = function(e) warning(e$message, call. = FALSE))
     }
 
-    data.table::data.table(
-      pixelIndex = 1:length(distValues),
-      year       = as.integer(distValues),
-      eventID    = newDist[i,]$eventID
-    ) |> subset(!is.na(year)) |> subset(year != 0)
+    distValues[, pixelIndex := .I]
+    distValues <- distValues[!is.na(year),]
+    distValues <- distValues[year != 0,]
+    distValues[, year    := as.integer(year)]
+    distValues[, eventID := newDist[i,]$eventID]
+    data.table::setkey(distValues, pixelIndex, year)
+    data.table::setcolorder(distValues)
+    distValues
   })
 
   sim$disturbanceEvents <- data.table::rbindlist(c(list(sim$disturbanceEvents), newEvents))
