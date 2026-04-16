@@ -837,27 +837,24 @@ ReadDisturbancesNTEMS <- function(sim){
       "; CBM type ID = ", disturbance_type_id,
       "; name = ", shQuote(name)))
 
-    distValues <- data.table::data.table(year = CBMutils::extractToRast(
-        sourceTIF, templateRast = sim$masterRaster
-      ) |> reproducible::Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
-    )
+    distValues <- CBMutils::extractToRast(
+      sourceTIF, templateRast = sim$masterRaster
+    ) |> reproducible::Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
 
     if (P(sim)$saveRasters){
       outPath <- file.path(outputPath(sim), "CBM_dataPrep", paste0(newDist[i,]$name, '.tif'))
       message("Writing aligned raster to path: ", outPath)
       tryCatch(
-        CBMutils::writeRasterWithValues(sim$masterRaster, outPath, values = distValues$year, overwrite = TRUE),
+        CBMutils::writeRasterWithValues(sim$masterRaster, outPath, values = distValues, overwrite = TRUE),
         error = function(e) warning(e$message, call. = FALSE))
     }
 
-    distValues[, pixelIndex := .I]
-    distValues <- distValues[!is.na(year),]
-    distValues <- distValues[year != 0,]
-    distValues[, year    := as.integer(year)]
-    distValues[, eventID := newDist[i,]$eventID]
-    data.table::setkey(distValues, pixelIndex, year)
-    data.table::setcolorder(distValues)
-    distValues
+    newEventsDist <- data.table::data.table(pixelIndex = which(distValues != 0))
+    newEventsDist[, year    := as.integer(distValues[newEventsDist$pixelIndex])]
+    newEventsDist[, eventID := newDist[i,]$eventID]
+    data.table::setkey(newEventsDist, pixelIndex, year)
+    data.table::setcolorder(newEventsDist)
+    newEventsDist
   })
 
   sim$disturbanceEvents <- data.table::rbindlist(c(list(sim$disturbanceEvents), newEvents))
