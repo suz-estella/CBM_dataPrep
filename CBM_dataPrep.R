@@ -622,21 +622,6 @@ PrepVol2Biomass <- function(sim){
 
 MatchSpecies <- function(sim){
 
-  ## TEMPORARY: Add species missing from LandR::sppEquivalencies_CA
-  sppEquiv <- LandR::sppEquivalencies_CA
-  if (!177 %in% sppEquiv$CBM_speciesID){
-    sppEquiv <- data.table::rbindlist(list(
-      sppEquiv, data.frame(
-        EN_generic_full = "Balsam poplar, largetooth aspen and eastern cottonwood",
-        CBM_speciesID = 177,
-        LandR         = "POPU_BAL",
-        Broadleaf     = TRUE,
-        CanfiCode     = 1211,
-        Latin_full    = "POPU" # For genus
-      )), fill = TRUE)
-  }
-
-  # Get species attributes
   for (gcMetaTable in intersect(c("gcMeta", "userGcMeta"), objects(sim))){
     if (any(!c("species_id", "sw_hw", "canfi_species", "genus") %in% names(sim[[gcMetaTable]]))){
 
@@ -650,7 +635,6 @@ MatchSpecies <- function(sim){
 
       sppMatchTable <- CBMutils::sppMatch(
         sim[[gcMetaTable]][[matchCol]],
-        sppEquivalencies = sppEquiv,
         return     = c("EN_generic_full", "CBM_speciesID", "LandR", "Broadleaf", "CanfiCode", "Genus"),
         otherNames = list(
           "White birch" = "Paper birch"
