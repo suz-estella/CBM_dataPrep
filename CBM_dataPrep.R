@@ -170,7 +170,6 @@ defineModule(sim, list(
       objectName = "userGcMeta", objectClass = "data.table",
       desc = "Growth curve metadata with additional species attributes.",
       columns = list(
-        species_id    = "CBM species ID",
         LandR         = "LandR species code",
         sw_hw         = "'sw' or 'hw'",
         canfi_species = "CanFI species codes",
@@ -180,7 +179,6 @@ defineModule(sim, list(
       objectName = "gcMeta", objectClass = "data.table",
       desc = "Growth curve metadata with additional species attributes.",
       columns = list(
-        species_id    = "CBM species ID",
         LandR         = "LandR species code",
         sw_hw         = "'sw' or 'hw'",
         canfi_species = "CanFI species codes",
@@ -623,7 +621,7 @@ PrepVol2Biomass <- function(sim){
 MatchSpecies <- function(sim){
 
   for (gcMetaTable in intersect(c("gcMeta", "userGcMeta"), objects(sim))){
-    if (any(!c("species_id", "sw_hw", "canfi_species", "genus") %in% names(sim[[gcMetaTable]]))){
+    if (any(!c("sw_hw", "canfi_species", "genus") %in% names(sim[[gcMetaTable]]))){
 
       if (!data.table::is.data.table(sim[[gcMetaTable]])){
         sim[[gcMetaTable]] <- data.table::as.data.table(sim[[gcMetaTable]])
@@ -635,12 +633,11 @@ MatchSpecies <- function(sim){
 
       sppMatchTable <- CBMutils::sppMatch(
         sim[[gcMetaTable]][[matchCol]],
-        return     = c("EN_generic_full", "CBM_speciesID", "LandR", "Broadleaf", "CanfiCode", "Genus"),
+        return     = c("EN_generic_full", "LandR", "Broadleaf", "CanfiCode", "Genus"),
         otherNames = list(
           "White birch" = "Paper birch"
         ))[, .(
           species       = EN_generic_full,
-          species_id    = CBM_speciesID,
           LandR,
           sw_hw         = data.table::fifelse(Broadleaf, "hw", "sw"),
           canfi_species = CanfiCode,
