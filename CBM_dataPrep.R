@@ -171,7 +171,7 @@ defineModule(sim, list(
       desc = "Growth curve metadata with additional species attributes.",
       columns = list(
         LandR         = "LandR species code",
-        sw_hw         = "'sw' or 'hw'",
+        sw            = "TRUE (softwood) or FALSE (hardwood)",
         canfi_species = "CanFI species codes",
         genus         = "Species genus"
       )),
@@ -180,7 +180,7 @@ defineModule(sim, list(
       desc = "Growth curve metadata with additional species attributes.",
       columns = list(
         LandR         = "LandR species code",
-        sw_hw         = "'sw' or 'hw'",
+        sw            = "TRUE (softwood) or FALSE (hardwood)",
         canfi_species = "CanFI species codes",
         genus         = "Species genus"
       )),
@@ -621,7 +621,7 @@ PrepVol2Biomass <- function(sim){
 MatchSpecies <- function(sim){
 
   for (gcMetaTable in intersect(c("gcMeta", "userGcMeta"), objects(sim))){
-    if (any(!c("sw_hw", "canfi_species", "genus") %in% names(sim[[gcMetaTable]]))){
+    if (any(!c("sw", "canfi_species", "genus") %in% names(sim[[gcMetaTable]]))){
 
       if (!data.table::is.data.table(sim[[gcMetaTable]])){
         sim[[gcMetaTable]] <- data.table::as.data.table(sim[[gcMetaTable]])
@@ -639,7 +639,7 @@ MatchSpecies <- function(sim){
         ))[, .(
           species       = EN_generic_full,
           LandR,
-          sw_hw         = data.table::fifelse(Broadleaf, "hw", "sw"),
+          sw            = !Broadleaf,
           canfi_species = CanfiCode,
           genus         = Genus
         )]
