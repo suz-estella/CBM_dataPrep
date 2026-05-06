@@ -23,10 +23,8 @@ defineModule(sim, list(
   parameters = rbind(
     defineParameter("saveRasters", "logical", FALSE, NA, NA, "Save rasters of inputs aligned to the `masterRaster`"),
     defineParameter("ageBacktrack", "list", NA, NA, NA, "Age backtracking parameters"),
-    defineParameter("parallel.cores",     "integer", NA_integer_, NA, NA,
-                    "Number of cores to use in parallel processing"),
-    defineParameter("parallel.chunkSize", "integer", 25000L, NA, NA,
-                    "Chunk size to use in parallel processing"),
+    defineParameter("parallel.cores",     "integer",     NA, NA, NA, "Number of cores to use in parallel processing"),
+    defineParameter("parallel.chunkSize", "integer", 25000L, NA, NA, "Chunk size to use in parallel processing"),
     defineParameter(".useCache", "character", "init", NA, NA, "Cache module events")
   ),
   inputObjects = bindrows(
