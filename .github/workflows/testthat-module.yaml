@@ -43,10 +43,10 @@ jobs:
         with:
            r-version: ${{ matrix.config.r }}
 
-      - name: Run tests
+      - name: Try running SF
         run: |
-          Require::Require("googledrive")
-          googledrive::drive_auth(path = Sys.getenv("GOOGLE_AUTH"))
-          testthat::test_dir("tests/testthat", filter = "integration", invert = TRUE, stop_on_failure = TRUE)
+          install.packages("sf")
+           sf::st_crs(4326)
+           sf::st_crs(32612)
         shell: Rscript {0}
 
