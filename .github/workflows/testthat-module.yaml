@@ -39,6 +39,12 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Install extra Linux dependencies (testing)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt -y install gdal-bin
+        shell: bash
+
       - uses: suz-estella/actions/setup-SpaDES-tests@main
         with:
            r-version: ${{ matrix.config.r }}
