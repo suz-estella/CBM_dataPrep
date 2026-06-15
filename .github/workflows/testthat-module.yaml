@@ -59,4 +59,3 @@ jobs:
           sf::st_crs(32612)
         shell: Rscript {0}
 
-s
