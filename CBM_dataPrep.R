@@ -10,25 +10,21 @@ defineModule(sim, list(
     person("Susan",  "Murray",    email = "murray.e.susan@gmail.com",           role = c("ctb"))
   ),
   childModules = character(0),
-  version = list(CBM_dataPrep = "1.0.0"),
+  version = list(CBM_dataPrep = "1.0.0.9000"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   citation = list("citation.bib"),
   documentation = list("CBM_dataPrep.Rmd"),
   reqdPkgs = list(
     "data.table", "RSQLite", "sf", "terra", "exactextractr", "gstat",
-    "reproducible (>=2.1.2)", "digest",
-    "googledrive", "httr2", "rvest",
-    "PredictiveEcology/CBMutils@v2.5.1",
-    "PredictiveEcology/LandR@6216911c254362ffa06e63345bb2a1b7b505d999 (<=1.1.5.9089)"
+    "reproducible (>=2.1.2)", "digest", "googledrive",
+    "PredictiveEcology/CBMutils@development (>=2.5.1)"
   ),
   parameters = rbind(
     defineParameter("saveRasters", "logical", FALSE, NA, NA, "Save rasters of inputs aligned to the `masterRaster`"),
     defineParameter("ageBacktrack", "list", NA, NA, NA, "Age backtracking parameters"),
-    defineParameter("parallel.cores",     "integer", NA_integer_, NA, NA,
-                    "Number of cores to use in parallel processing"),
-    defineParameter("parallel.chunkSize", "integer", 25000L, NA, NA,
-                    "Chunk size to use in parallel processing"),
+    defineParameter("parallel.cores",     "integer",     NA, NA, NA, "Number of cores to use in parallel processing"),
+    defineParameter("parallel.chunkSize", "integer", 25000L, NA, NA, "Chunk size to use in parallel processing"),
     defineParameter(".useCache", "character", "init", NA, NA, "Cache module events")
   ),
   inputObjects = bindrows(
@@ -96,6 +92,18 @@ defineModule(sim, list(
         "Growth curve metadata. An input to CBM_core.",
         "If provided, species names or LandR codes will be matched with known species get additional attributes.")),
     expectsInput(
+      objectName = "disturbanceMeta", objectClass = "data.table",
+      desc = "Table defining disturbance event types",
+      columns = c(
+        eventID               = "Event type ID",
+        name                  = "Disturbance name (e.g. 'Wildfire').",
+        disturbance_type_name = "Optional. CBM disturbance type name.",
+        disturbance_type_id   = "Optional. CBM disturbance type ID.",
+        sourceValue           = "Optional. Value in `disturbanceRasters` to include as events",
+        sourceDelay           = "Optional. Delay (in years) of when the `disturbanceRasters` will take effect",
+        sourceObjectName      = "Optional. Name of the object in the `simList` to retrieve the `disturbanceRasters` from annually."
+      )),
+    expectsInput(
       objectName = "disturbanceRasters", objectClass = "list",
       desc = paste(
         "Set of spatial data sources containing locations of disturbance events for each year.",
@@ -116,19 +124,8 @@ defineModule(sim, list(
           "International Journal of Digital Earth 9(11), 1035-1054 (Hermosilla et al. 2016)."
       )),
     expectsInput(
-      objectName = "disturbanceMeta", objectClass = "data.table",
-      desc = "Table defining the disturbance event types",
-      columns = c(
-        eventID             = "Event type ID",
-        disturbance_type_id = "CBM-CFS3 disturbance type ID. If not provided, the user will be prompted to choose IDs.",
-        name                = "Disturbance name (e.g. 'Wildfire'). Required only if 'disturbance_type_id' absent.",
-        sourceValue         = "Optional. Value in `disturbanceRasters` to include as events",
-        sourceDelay         = "Optional. Delay (in years) of when the `disturbanceRasters` will take effect",
-        sourceObjectName    = "Optional. Name of the object in the `simList` to retrieve the `disturbanceRasters` from annually."
-      )),
-    expectsInput(
-      objectName = "dbPath", objectClass = "character",
-      sourceURL = "https://raw.githubusercontent.com/cat-cfs/libcbm_py/main/libcbm/resources/cbm_defaults_db/cbm_defaults_v1.2.8340.362.db",
+      objectName = "cbm_defaults_db", objectClass = "character",
+      sourceURL = "https://raw.githubusercontent.com/cat-cfs/libcbm_py/main/libcbm/resources/cbm_defaults_db/cbm_defaults_v1.2.9300.391.db",
       desc = "Path to the CBM-CBM3 defaults database")
   ),
   outputObjects = bindrows(
@@ -136,12 +133,11 @@ defineModule(sim, list(
       objectName = "standDT", objectClass = "data.table",
       desc = "Table of stand attributes.",
       columns = c(
-        pixelIndex         = "`masterRaster` cell index",
-        area               = "`masterRaster` cell area in meters",
-        admin_abbrev       = "Canada administrative abbreviation extracted from `adminLocator`",
-        admin_boundary_id  = "CBM-CFS3 administrative boundary ID",
-        ecozone            = "Canada ecozone ID extracted from `ecoLocator`",
-        spatial_unit_id    = "CBM-CFS3 spatial unit ID"
+        pixelIndex   = "`masterRaster` cell index",
+        area         = "`masterRaster` cell area in meters",
+        admin_abbrev = "Canada administrative boundary abbreviation",
+        admin_name   = "Canada administrative boundary name extracted from `adminLocator`",
+        eco_id       = "Canada ecozone ID extracted from `ecoLocator`"
       )),
     createsOutput(
       objectName = "cohortDT", objectClass = "data.table",
@@ -150,8 +146,7 @@ defineModule(sim, list(
         cohortID   = "`masterRaster` cell index",
         pixelIndex = "`masterRaster` cell index",
         age        = "Cohort ages extracted from `ageLocator`",
-        ageSpinup  = "Cohort ages raised to >= `ageSpinupMin`",
-        gcids      = "Growth curve ID unique to every spatial unit and `curveID`"
+        ageSpinup  = "Cohort ages raised to >= `ageSpinupMin`"
       )),
     createsOutput(
       objectName = "ageDataYear", objectClass = "numeric",
@@ -159,21 +154,20 @@ defineModule(sim, list(
         "Year that the ages in `ageLocator` represent.",
         "If `ageLocator` is a `CBMutils::CBMsources` sourceID this will be automatically set.",
         "Otherwise, if omitted, ages are assumed to represent the simulation start year.")),
-    expectsInput(
+    createsOutput(
       objectName = "curveID", objectClass = "character",
       desc = paste(
         "Column(s) uniquely defining each growth curve in `cohortDT` and `userGcMeta`.",
         "Defaults to the nmes of the columns created by `cohortLocators` and `CBMsourceIDs`.")),
     createsOutput(
-      objectName = "userGcSPU", objectClass = "data.table",
-      desc = "Table of growth curve and spatial unit combinations `cohortDT`."),
+      objectName = "userGcLocations", objectClass = "data.table",
+      desc = "Table of combinations of growth curve, admin location, and ecozone ID in `cohortDT`."),
     createsOutput(
       objectName = "userGcMeta", objectClass = "data.table",
       desc = "Growth curve metadata with additional species attributes.",
       columns = list(
-        species_id    = "CBM-CFS3 species ID",
         LandR         = "LandR species code",
-        sw_hw         = "'sw' or 'hw'",
+        sw            = "TRUE (softwood) or FALSE (hardwood)",
         canfi_species = "CanFI species codes",
         genus         = "Species genus"
       )),
@@ -181,9 +175,8 @@ defineModule(sim, list(
       objectName = "gcMeta", objectClass = "data.table",
       desc = "Growth curve metadata with additional species attributes.",
       columns = list(
-        species_id    = "CBM-CFS3 species ID",
         LandR         = "LandR species code",
-        sw_hw         = "'sw' or 'hw'",
+        sw            = "TRUE (softwood) or FALSE (hardwood)",
         canfi_species = "CanFI species codes",
         genus         = "Species genus"
       )),
@@ -356,6 +349,9 @@ PrepMasterRaster <- function(sim){
     }
   }
 
+  if (terra::is.lonlat(sim$masterRaster))          stop("masterRaster must be in a projected CRS")
+  if (terra::ncell(sim$masterRaster) > (2^31 - 1)) stop("masterRaster pixel count limited to 2^31 - 1")
+
   # Mask cells outside of admin boundary
   if (is.character(sim$adminLocator) && length(sim$adminLocator) == 1 &&
       !terra::global(sim$masterRaster, "anyNA")[1, 1]){
@@ -381,21 +377,17 @@ ReadCohorts <- function(sim){
     key = "pixelIndex")
 
   # Set cell area
-  if (!terra::is.lonlat(sim$masterRaster)){
-    allPixDT$area <- prod(terra::res(sim$masterRaster) * terra::linearUnits(sim$masterRaster))
-
-  }else{
-    masterRasterCellSize <- terra::cellSize(
-      sim$masterRaster, unit = "m", mask = FALSE, transform = FALSE) |> Cache()
-    allPixDT$area <- terra::values(masterRasterCellSize, mat = FALSE) |> Cache()
-  }
+  data.table::set(
+    allPixDT, j = "area",
+    value = prod(terra::res(sim$masterRaster) * terra::linearUnits(sim$masterRaster)))
 
   # Set cohort attributes from input sources
   colInputs <- list(
-    admin_name = sim$adminLocator,
-    ecozone    = sim$ecoLocator,
-    age        = sim$ageLocator,
-    curveID    = sim$gcIndexLocator
+    admin_name   = sim$adminLocator,
+    admin_abbrev = if (isValue(sim$adminLocator)) adminAbbrev(sim$adminLocator),
+    eco_id       = sim$ecoLocator,
+    age          = sim$ageLocator,
+    curveID      = sim$gcIndexLocator
   )
 
   if (length(sim$cohortLocators) > 0){
@@ -424,7 +416,8 @@ ReadCohorts <- function(sim){
     if (isValue(colInputs[[colName]])){
 
       # Set column as a single value
-      allPixDT[[colName]] <- colInputs[[colName]]
+      if (is.character(colInputs[[colName]])) colInputs[[colName]] <- factor(colInputs[[colName]])
+      data.table::set(allPixDT, j = colName, value = colInputs[[colName]])
 
     }else{
 
@@ -434,9 +427,9 @@ ReadCohorts <- function(sim){
 
         sourceCBM <- CBMutils::CBMsourceExtractToRast(
           colInputs[[colName]], templateRast = sim$masterRaster
-        ) |> Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
+        ) |> reproducible::Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
 
-        allPixDT[[colName]] <- sourceCBM$extractToRast
+        data.table::set(allPixDT, j = colName, value = sourceCBM$extractToRast)
 
         if (colName == "age") sim$ageDataYear <- sourceCBM$year
 
@@ -446,15 +439,16 @@ ReadCohorts <- function(sim){
 
         message("Extracting spatial input data into column '", colName, "'")
 
-        if (isURL(allPixDT[[colName]])){
-          allPixDT[[colName]] <- reproducible::prepInputs(
+        if (isURL(colInputs[[colName]])){
+          colInputs[[colName]] <- reproducible::prepInputs(
             destinationPath = inputPath(sim),
-            url             = allPixDT[[colName]])
+            url             = colInputs[[colName]])
         }
 
-        allPixDT[[colName]] <- CBMutils::extractToRast(
-          colInputs[[colName]], templateRast = sim$masterRaster
-        ) |> Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
+        data.table::set(allPixDT, j = colName, value = CBMutils::extractToRast(
+          colInputs[[colName]], templateRast = sim$masterRaster) |>
+            reproducible::Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
+        )
       }
 
       if (P(sim)$saveRasters){
@@ -464,9 +458,12 @@ ReadCohorts <- function(sim){
           CBMutils::writeRasterWithValues(sim$masterRaster, allPixDT[[colName]], outPath, overwrite = TRUE),
           error = function(e) warning(e$message, call. = FALSE))
       }
-
-      if (is.factor(allPixDT[[colName]])) allPixDT[[colName]] <- as.character(allPixDT[[colName]])
     }
+  }
+
+  # Set admin_abbrev
+  if (!"admin_abbrev" %in% names(allPixDT) & "admin_name" %in% names(allPixDT)){
+    allPixDT[, admin_abbrev := adminAbbrev(admin_name)]
   }
 
   # Set cohort age data year if not set
@@ -475,82 +472,15 @@ ReadCohorts <- function(sim){
     sim$ageDataYear <- as.numeric(start(sim))
   }
 
-  # Set CBM-CFS3 spatial_unit_id
-  if ("admin_name" %in% names(allPixDT)){
-
-    cbmDBcon <- DBI::dbConnect(RSQLite::dbDriver("SQLite"), sim$dbPath)
-    cbmDB <- list(
-      admin_boundary_tr = DBI::dbReadTable(cbmDBcon, "admin_boundary_tr"),
-      spatial_unit      = DBI::dbReadTable(cbmDBcon, "spatial_unit")
-    ) |> lapply(data.table::data.table)
-    RSQLite::dbDisconnect(cbmDBcon)
-
-    # Set admin_abbrev & admin_boundary_id
-    cbmDB$admin_boundary_tr <- cbmDB$admin_boundary_tr[locale_id == 1, .(admin_name = name, admin_boundary_id)]
-
-    ## Add a row for "Yukon"
-    cbmDB$admin_boundary_tr <- rbind(cbmDB$admin_boundary_tr, data.frame(
-      admin_name = "Yukon",
-      admin_boundary_id = cbmDB$admin_boundary_tr[admin_name == "Yukon Territory", admin_boundary_id]))
-
-    cbmDB$admin_boundary_tr[, admin_abbrev := sapply(
-      admin_name, switch,
-      "Newfoundland"              = "NL",
-      "Labrador"                  = "NL",
-      "Newfoundland and Labrador" = "NL",
-      "Prince Edward Island"      = "PE",
-      "Nova Scotia"               = "NS",
-      "New Brunswick"             = "NB",
-      "Quebec"                    = "QC",
-      "Ontario"                   = "ON",
-      "Manitoba"                  = "MB",
-      "Alberta"                   = "AB",
-      "Saskatchewan"              = "SK",
-      "British Columbia"          = "BC",
-      "Yukon Territory"           = "YT",
-      "Yukon"                     = "YT",
-      "Northwest Territories"     = "NT",
-      "Nunavut"                   = "NU",
-      NA_character_
-    )]
-
-    cbmDB$admin_boundary_tr[, admin_name   := factor(admin_name)]
-    cbmDB$admin_boundary_tr[, admin_abbrev := factor(admin_abbrev)]
-
-    if (is.character(allPixDT$admin_name)){
-      allPixDT[, admin_name := factor(admin_name, levels = cbmDB$admin_boundary_tr$admin_name)]
-    }
-
-    if (is.factor(allPixDT$admin_name)){
-      allPixDT <- merge(allPixDT, cbmDB$admin_boundary_tr, by = "admin_name", all.x = TRUE)
-
-    }else{
-
-      # Input is admin_boundary_id
-      data.table::setnames(allPixDT, "admin_name", "admin_boundary_id")
-      allPixDT <- merge(allPixDT, cbmDB$admin_boundary_tr, by = "admin_boundary_id", all.x = TRUE)
-    }
-
-    # Set CBM-CFS3 spatial_unit_id
-    allPixDT <- merge(
-      allPixDT,
-      cbmDB$spatial_unit[, .(admin_boundary_id, ecozone = eco_boundary_id, spatial_unit_id = id)],
-      by = c("admin_boundary_id", "ecozone"), all.x = TRUE)
-  }
-
-  # Create sim$standDT and sim$cohortDT
-  data.table::setkey(allPixDT, pixelIndex)
-  allPixDT[, admin_name := NULL]
-
+  # Return
   sim$standDT <- allPixDT
-
   return(invisible(sim))
 }
 
 PrepCohorts <- function(sim){
 
   tblCols <- list()
-  tblCols$standDT  <- c("area", "admin_abbrev", "admin_boundary_id", "ecozone", "spatial_unit_id")
+  tblCols$standDT  <- c("area", "admin_abbrev", "admin_name", "eco_id")
   tblCols$cohortDT <- setdiff(names(sim$standDT), c("pixelIndex", tblCols$standDT))
 
   # Subset stands and cohorts to cells where masterRaster is not NA
@@ -578,17 +508,7 @@ PrepCohorts <- function(sim){
     rm(hasNA)
   }
 
-  # Check spatial unit IDs
-  for (col in c("admin_abbrev", "ecozone")){
-    if (any(is.na(sim$standDT[[col]]))) stop(col, " NA in ", sum(is.na(sim$standDT[[col]])), " pixels")
-  }
-  if (any(is.na(sim$standDT$spatial_unit_id))){
-    noMatch <- unique(sim$standDT[is.na(spatial_unit_id), .(admin_abbrev, ecozone, spatial_unit_id)])
-    data.table::setkey(noMatch, admin_abbrev, ecozone)
-    if (nrow(noMatch) > 0) stop(
-      "spatial_unit_id not found for: ",
-      paste(paste(noMatch$admin_abbrev, "ecozone", noMatch$ecozone), collapse = "; "))
-  }
+
 
   if (is.null(sim$cohortDT)){
     sim$cohortDT <- sim$standDT[, .SD, .SDcols = c("pixelIndex", tblCols$cohortDT)]
@@ -657,7 +577,7 @@ AgeStepBackward <- function(sim){
       yearOut    = start(sim),
       distEvents = sim$disturbanceEvents,
       params     = if (is.list(P(sim)$ageBacktrack)) P(sim)$ageBacktrack
-    ) |> Cache()
+    ) |> reproducible::Cache()
   }))
   data.table::setkey(newAges, pixelIndex)
 
@@ -685,35 +605,19 @@ PrepVol2Biomass <- function(sim){
 
   if (!all(sim$curveID %in% names(sim$cohortDT))) stop("cohortDT does not contain all columns in `curveID`")
 
-  # Define unique growth curves with spatial_unit_id
-  userGcSPU <- cbind(sim$standDT[, .(spatial_unit_id)], sim$cohortDT[, .SD, .SDcols = sim$curveID])
+  # Define locations of existing growth curves
+  userGcLocations <- cbind(sim$standDT[, .(admin_name, admin_abbrev, eco_id)],
+                           sim$cohortDT[, .SD, .SDcols = sim$curveID])
 
-  sim$cohortDT[, gcids := factor(CBMutils::gcidsCreate(userGcSPU))]
-
-  sim$userGcSPU <- unique(userGcSPU)
+  sim$userGcLocations <- unique(userGcLocations)
 
   return(invisible(sim))
 }
 
 MatchSpecies <- function(sim){
 
-  ## TEMPORARY: Add species missing from LandR::sppEquivalencies_CA
-  sppEquiv <- LandR::sppEquivalencies_CA
-  if (!177 %in% sppEquiv$CBM_speciesID){
-    sppEquiv <- data.table::rbindlist(list(
-      sppEquiv, data.frame(
-        EN_generic_full = "Balsam poplar, largetooth aspen and eastern cottonwood",
-        CBM_speciesID = 177,
-        LandR         = "POPU_BAL",
-        Broadleaf     = TRUE,
-        CanfiCode     = 1211,
-        Latin_full    = "POPU" # For genus
-      )), fill = TRUE)
-  }
-
-  # Get species attributes
   for (gcMetaTable in intersect(c("gcMeta", "userGcMeta"), objects(sim))){
-    if (any(!c("species_id", "sw_hw", "canfi_species", "genus") %in% names(sim[[gcMetaTable]]))){
+    if (any(!c("sw", "canfi_species", "genus") %in% names(sim[[gcMetaTable]]))){
 
       if (!data.table::is.data.table(sim[[gcMetaTable]])){
         sim[[gcMetaTable]] <- data.table::as.data.table(sim[[gcMetaTable]])
@@ -725,15 +629,13 @@ MatchSpecies <- function(sim){
 
       sppMatchTable <- CBMutils::sppMatch(
         sim[[gcMetaTable]][[matchCol]],
-        sppEquivalencies = sppEquiv,
-        return     = c("EN_generic_full", "CBM_speciesID", "LandR", "Broadleaf", "CanfiCode", "Genus"),
+        return     = c("EN_generic_full", "LandR", "Broadleaf", "CanfiCode", "Genus"),
         otherNames = list(
           "White birch" = "Paper birch"
         ))[, .(
           species       = EN_generic_full,
-          species_id    = CBM_speciesID,
           LandR,
-          sw_hw         = data.table::fifelse(Broadleaf, "hw", "sw"),
+          sw            = !Broadleaf,
           canfi_species = CanfiCode,
           genus         = Genus
         )]
@@ -750,41 +652,42 @@ MatchSpecies <- function(sim){
 
 MatchDisturbances <- function(sim){
 
+  if (is.null(sim$disturbanceMeta)) return(invisible(sim))
+
   if (isURL(sim$disturbanceMeta)){
-    sim$disturbanceMeta <- prepInputs(
+    sim$disturbanceMeta <- reproducible::prepInputs(
       destinationPath = inputPath(sim),
       url = sim$disturbanceMeta,
       fun = data.table::fread
     )
+    data.table::setkey(sim$disturbanceMeta, eventID)
   }
 
-  if (!is.null(sim$disturbanceMeta) && !"disturbance_type_id" %in% names(sim$disturbanceMeta)){
+  if (!inherits(sim$disturbanceMeta, "data.table")){
+    sim$disturbanceMeta <- tryCatch(
+      data.table::as.data.table(sim$disturbanceMeta),
+      error = function(e) stop(
+        "disturbanceMeta could not be converted to data.table: ", e$message, call. = FALSE))
+  }
 
-    if (is.null(sim$dbPath)) stop("'dbPath' input required to set disturbanceMeta 'disturbance_type_id'")
+  # Match user disturbances with CBM disturbance types
+  if (!any(c("disturbance_type_name", "disturbance_type_id") %in% names(sim$disturbanceMeta))){
 
-    if (!inherits(sim$disturbanceMeta, "data.table")){
-      sim$disturbanceMeta <- tryCatch(
-        data.table::as.data.table(sim$disturbanceMeta),
-        error = function(e) stop(
-          "'disturbanceMeta' could not be converted to data.table: ", e$message, call. = FALSE))
-    }
+    if (!"name" %in% names(sim$disturbanceMeta)) stop("disturbanceMeta requires 'name' column to set disturbance types")
+    if (is.null(sim$cbm_defaults_db)) stop("cbm_defaults_db required to set disturbanceMeta disturbance types")
 
-    # Match user disturbances with CBM-CFS3 disturbance type IDs
     askUser <- interactive() & !identical(Sys.getenv("TESTTHAT"), "true")
-    if (askUser) message(
-      "Prompting user to match input disturbances with CBM-CFS3 disturbances:")
-
-    data.table::setnames(
-      sim$disturbanceMeta, c("name", "description"), c("nameUser", "descUser"),
-      skip_absent = TRUE)
+    if (askUser) message("Prompting user to match input disturbances with CBM disturbances:")
+    distMatch <- CBMutils::distMatch(
+      sim$disturbanceMeta$name,
+      cbm_defaults_db = sim$cbm_defaults_db,
+      ask = askUser
+    ) |> reproducible::Cache()
 
     sim$disturbanceMeta <- cbind(
-      sim$disturbanceMeta, CBMutils::distMatch(
-        sim$disturbanceMeta$nameUser,
-        dbPath = sim$dbPath,
-        ask    = askUser
-      ) |> Cache()
+      sim$disturbanceMeta, distMatch[, .(disturbance_type_name = name, disturbance_type_id, description)]
     )
+    data.table::setkey(sim$disturbanceMeta, eventID)
   }
 
   return(invisible(sim))
@@ -826,30 +729,29 @@ ReadDisturbances <- function(sim, year = time(sim)){
     with(distMeta, message(
       year, ": ",
       "Reading disturbances for eventID = ", eventID,
-      if (exists("disturbance_type_id")) paste("; CBM type ID =", disturbance_type_id),
-      if (exists("name"))                paste("; name =", shQuote(name))))
+      if (exists("disturbance_type_id"))   paste("; CBM type ID =", disturbance_type_id),
+      if (exists("disturbance_type_name")) paste("; name =", shQuote(disturbance_type_name))))
 
     distValues <- CBMutils::extractToRast(
       distRasts[[i]], templateRast = sim$masterRaster
-    ) |> Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
+    ) |> reproducible::Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
 
     if (P(sim)$saveRasters){
-      outPath <- file.path(outputPath(sim), "CBM_dataPrep", sprintf(
-        "distEvents-%s_%s-%s.tif", eventIDs[[i]], year, i))
+      outPath <- file.path(outputPath(sim), "CBM_dataPrep", sprintf("distEvents-%s_%s-%s.tif", eventIDs[[i]], year, i))
       message("Writing aligned raster to path: ", outPath)
       tryCatch(
-        CBMutils::writeRasterWithValues(sim$masterRaster, distValues, outPath, overwrite = TRUE),
+        CBMutils::writeRasterWithValues(sim$masterRaster, outPath, values = distValues, overwrite = TRUE),
         error = function(e) warning(e$message, call. = FALSE))
     }
 
     if (length(na.omit(distMeta$sourceValue)) == 1){
-      eventIndex <- which(distValues %in% distMeta$sourceValue)
+      distValues <- which(distValues %in% distMeta$sourceValue)
     }else{
-      eventIndex <- which(!is.na(distValues))
+      distValues <- which(!is.na(distValues))
     }
 
     data.table::data.table(
-      pixelIndex = eventIndex,
+      pixelIndex = distValues,
       year       = as.integer(year + c(na.omit(distMeta$sourceDelay), 0)[[1]]),
       eventID    = eventIDs[[i]]
     )
@@ -868,21 +770,24 @@ ReadDisturbancesNTEMS <- function(sim){
 
   newDist <- rbind(
     data.table(
-      eventID             = 1001L,
-      disturbance_type_id = 1, # Wildfire
-      name                = "NTEMS CA Forest Fires 1985-2020",
-      url                 = "https://opendata.nfis.org/downloads/forest_change/CA_Forest_Fire_1985-2020.zip"
+      eventID               = 1001L,
+      disturbance_type_name = "Wildfire",
+      disturbance_type_id   = 1,
+      name                  = "NTEMS CA Forest Fires 1985-2020",
+      url                   = "https://opendata.nfis.org/downloads/forest_change/CA_Forest_Fire_1985-2020.zip"
     ),
     data.table(
-      eventID             = 1002L,
-      disturbance_type_id = 204, # Clearcut harvesting without salvage
-      name                = "NTEMS CA Forest Harvest 1985-2020",
-      url                 = "https://opendata.nfis.org/downloads/forest_change/CA_Forest_Harvest_1985-2020.zip"
+      eventID               = 1002L,
+      disturbance_type_name = "Clearcut harvesting without salvage",
+      disturbance_type_id   = 204, # Clearcut harvesting without salvage
+      name                  = "NTEMS CA Forest Harvest 1985-2020",
+      url                   = "https://opendata.nfis.org/downloads/forest_change/CA_Forest_Harvest_1985-2020.zip"
     )
   )
 
   sim$disturbanceMeta <- data.table::rbindlist(list(
     sim$disturbanceMeta, newDist[, 1:3]), fill = TRUE)
+  data.table::setkey(sim$disturbanceMeta, eventID)
 
   newEvents <- lapply(1:nrow(newDist), function(i){
 
@@ -894,30 +799,34 @@ ReadDisturbancesNTEMS <- function(sim){
       targetFile  = paste0(tools::file_path_sans_ext(basename(url)), ".tif"),
       alsoExtract = "similar",
       fun         = NA
-    ) |> Cache()
+    ) |> reproducible::Cache()
 
     with(newDist[i,], message(
       "Reading NTEMS disturbances for eventID = ", eventID,
       "; CBM type ID = ", disturbance_type_id,
       "; name = ", shQuote(name)))
 
-    distValues <- CBMutils::extractToRast(
-      sourceTIF, templateRast = sim$masterRaster
-    ) |> Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
+    distValues <- data.table::data.table(year = CBMutils::extractToRast(
+        sourceTIF, templateRast = sim$masterRaster
+      ) |> reproducible::Cache(omitArgs = "templateRast", .cacheExtra = masterRasterDigest(sim))
+    )
 
     if (P(sim)$saveRasters){
       outPath <- file.path(outputPath(sim), "CBM_dataPrep", paste0(newDist[i,]$name, '.tif'))
       message("Writing aligned raster to path: ", outPath)
       tryCatch(
-        CBMutils::writeRasterWithValues(sim$masterRaster, distValues, outPath, overwrite = TRUE),
+        CBMutils::writeRasterWithValues(sim$masterRaster, outPath, values = distValues$year, overwrite = TRUE),
         error = function(e) warning(e$message, call. = FALSE))
     }
 
-    data.table::data.table(
-      pixelIndex = 1:length(distValues),
-      year       = as.integer(distValues),
-      eventID    = newDist[i,]$eventID
-    ) |> subset(!is.na(year)) |> subset(year != 0)
+    distValues[, pixelIndex := .I]
+    distValues <- distValues[!is.na(year),]
+    distValues <- distValues[year != 0,]
+    distValues[, year    := as.integer(year)]
+    distValues[, eventID := newDist[i,]$eventID]
+    data.table::setkey(distValues, pixelIndex, year)
+    data.table::setcolorder(distValues)
+    distValues
   })
 
   sim$disturbanceEvents <- data.table::rbindlist(c(list(sim$disturbanceEvents), newEvents))
@@ -927,16 +836,16 @@ ReadDisturbancesNTEMS <- function(sim){
 
 .inputObjects <- function(sim){
 
-  # CBM-CFS3 defaults database
-  if (!suppliedElsewhere("dbPath", sim)){
+  # CBM defaults SQLite database
+  if (!suppliedElsewhere("cbm_defaults_db", sim)){
 
-    sim$dbPath <- file.path(inputPath(sim), "cbm_defaults_v1.2.8340.362.db")
+    sim$cbm_defaults_db <- file.path(inputPath(sim), basename(extractURL("cbm_defaults_db")))
 
-    if (!file.exists(sim$dbPath)) prepInputs(
+    if (!file.exists(sim$cbm_defaults_db)) reproducible::prepInputs(
       destinationPath = inputPath(sim),
-      url         = extractURL("dbPath"),
-      targetFile  = basename(sim$dbPath),
-      dlFun       = download.file(extractURL("dbPath"), sim$dbPath, mode = "wb", quiet = TRUE),
+      url         = extractURL("cbm_defaults_db"),
+      targetFile  = basename(sim$cbm_defaults_db),
+      dlFun       = download.file(extractURL("cbm_defaults_db"), sim$cbm_defaults_db, mode = "wb", quiet = TRUE),
       fun         = NA
     )
   }
@@ -952,7 +861,7 @@ ReadDisturbancesNTEMS <- function(sim){
   # Growth curve ID
   if (!suppliedElsewhere("curveID", sim)){
 
-    if (suppliedElsewhere("gcIndexLocator")){
+    if (suppliedElsewhere("gcIndexLocator", sim)){
       sim$curveID <- "curveID"
 
     }else{

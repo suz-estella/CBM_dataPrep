@@ -9,46 +9,37 @@ test_that("Module: SK", {
   projectName <- "SK-small"
   times       <- list(start = 1998, end = 2000)
 
-  simInitInput <- SpaDEStestMuffleOutput(
+  simInitInput <- SpaDES.project::setupProject(
 
-    SpaDES.project::setupProject(
+    modules = "CBM_dataPrep",
+    times   = times,
+    paths   = list(
+      projectPath = spadesTestPaths$projectPath,
+      modulePath  = spadesTestPaths$modulePath,
+      packagePath = spadesTestPaths$packagePath,
+      inputPath   = spadesTestPaths$inputPath,
+      cachePath   = spadesTestPaths$cachePath,
+      outputPath  = file.path(spadesTestPaths$temp$outputs, projectName)
+    ),
 
-      modules = "CBM_dataPrep",
-      times   = times,
-      paths   = list(
-        projectPath = spadesTestPaths$projectPath,
-        modulePath  = spadesTestPaths$modulePath,
-        packagePath = spadesTestPaths$packagePath,
-        inputPath   = spadesTestPaths$inputPath,
-        cachePath   = spadesTestPaths$cachePath,
-        outputPath  = file.path(spadesTestPaths$temp$outputs, projectName)
-      ),
+    # Set required packages for project set up
+    require = "terra",
 
-      # Set required packages for project set up
-      require = "terra",
-
-      # Set study area
-      masterRaster = terra::rast(
-        crs        = "EPSG:3979",
-        extent     = c(xmin = -687696, xmax = -681036, ymin = 711955, ymax = 716183),
-        resolution = 30,
-        vals       = 1
-      )
+    # Set study area
+    masterRaster = terra::rast(
+      crs        = "EPSG:3979",
+      extent     = c(xmin = -687696, xmax = -681036, ymin = 711955, ymax = 716183),
+      resolution = 30,
+      vals       = 1
     )
   )
 
   # Run simInit
-  simTestInit <- SpaDEStestMuffleOutput(
-    SpaDES.core::simInit2(simInitInput)
-  )
-
+  simTestInit <- SpaDES.core::simInit2(simInitInput)
   expect_s4_class(simTestInit, "simList")
 
   # Run spades
-  simTest <- SpaDEStestMuffleOutput(
-    SpaDES.core::spades(simTestInit)
-  )
-
+  simTest <- SpaDES.core::spades(simTestInit)
   expect_s4_class(simTest, "simList")
 
 
@@ -57,22 +48,20 @@ test_that("Module: SK", {
   expect_true(!is.null(simTest$standDT))
   expect_true(inherits(simTest$standDT, "data.table"))
 
-  for (colName in c("pixelIndex", "area", "admin_abbrev", "admin_boundary_id", "ecozone", "spatial_unit_id")){
+  for (colName in c("pixelIndex", "area", "admin_abbrev", "admin_name", "eco_id")){
     expect_true(colName %in% names(simTest$standDT))
     expect_true(all(!is.na(simTest$standDT[[colName]])))
   }
   expect_identical(data.table::key(simTest$standDT), "pixelIndex")
 
-  expect_false("admin_name" %in% names(simTest$standDT))
-
   expect_equal(nrow(simTest$standDT), 31302)
   expect_equal(simTest$standDT$pixelIndex, 1:31302)
   expect_in(simTest$standDT$area,              30 * 30)
-  #expect_in(simTest$standDT$admin_name,        "Saskatchewan") # Column excluded from result
   expect_in(simTest$standDT$admin_abbrev,      "SK")
-  expect_in(simTest$standDT$admin_boundary_id, 9)
-  expect_in(simTest$standDT$ecozone,           9)
-  expect_in(simTest$standDT$spatial_unit_id,   28)
+  expect_in(simTest$standDT$admin_name,        "Saskatchewan")
+  #expect_in(simTest$standDT$admin_boundary_id, 9) # Excluded from result
+  expect_in(simTest$standDT$eco_id,           9)
+  #expect_in(simTest$standDT$spatial_unit_id,   28) # Excluded from result
 
 
   ## Check output 'cohortDT' ----
