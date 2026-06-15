@@ -46,10 +46,6 @@ jobs:
           sudo apt-get install -y libudunits2-dev libgdal-dev libgeos-dev libproj-dev libsqlite3-dev
         shell: bash
 
-      - uses: suz-estella/actions/setup-SpaDES-tests@main
-        with:
-           r-version: ${{ matrix.config.r }}
-
       - name: Try running SF
         run: |
           install.packages("sf")
