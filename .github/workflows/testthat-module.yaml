@@ -46,10 +46,17 @@ jobs:
           sudo apt-get install -y libudunits2-dev libgdal-dev libgeos-dev libproj-dev libsqlite3-dev
         shell: bash
 
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+          Ncpus: 2
+
       - name: Try running SF
         run: |
           install.packages("sf")
-           sf::st_crs(4326)
-           sf::st_crs(32612)
+          sf::st_crs(4326)
+          sf::st_crs(32612)
         shell: Rscript {0}
 
+s
